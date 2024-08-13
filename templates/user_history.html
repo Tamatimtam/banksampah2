@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="bg-white shadow-md rounded-lg p-6">
+    <h1 class="text-3xl font-bold mb-4">Trash Submission History</h1>
+    <table class="w-full">
+        <thead>
+            <tr>
+                <th class="text-left">Date</th>
+                <th class="text-left">Trash Type</th>
+                <th class="text-left">Weight (Kg)</th>
+                <th class="text-left">Image</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for submission in submissions %}
+            <tr>
+                <td>{{ submission.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td>{{ submission.trash_type }}</td>
+                <td>{{ submission.weight }}</td>
+                <td><img src="{{ submission.image_path }}" alt="Trash Image" class="w-20 h-20 object-cover"></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="bg-white shadow-md rounded-lg p-6">
+    <h1 class="text-3xl font-bold mb-4">Submit Trash</h1>
+    <div class="mb-4">
+        <h2 class="text-xl font-semibold mb-2">Live Camera Feed</h2>
+        <video id="video" width="640" height="480" autoplay></video>
+        <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+    </div>
+    <div class="mb-4">
+        <h2 class="text-xl font-semibold mb-2">Current Weight: <span id="weight">0.00</span> Kg</h2>
+    </div>
+    <button id="capture" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mb-4">
+        Capture Image
+    </button>
+    <div id="result" class="hidden">
+        <h3 class="text-lg font-semibold mb-2">Detected Trash Type: <span id="trash-type"></span></h3>
+        <p class="mb-2">Is this correct?</p>
+        <button id="confirm" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mr-2">Yes</button>
+        <button id="change" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded">No, Change</button>
+    </div>
+    <form id="submit-form" class="hidden" method="POST" action="{{ url_for('main.submit_trash') }}">
+        <input type="hidden" name="image_data" id="image-data">
+        <input type="hidden" name="trash_type" id="trash-type-input">
+        <input type="hidden" name="weight" id="weight-input">
+        <label for="manual-trash-type" class="block mb-2">Enter trash type manually:</label>
+        <input type="text" id="manual-trash-type" name="manual_trash_type" class="border rounded px-2 py-1 mb-2">
+        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Submit</button>
+    </form>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+<script src="https://cdn.roboflow.com/0.2.26/roboflow.js"></script>
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const captureButton = document.getElementById('capture');
+    const resultDiv = document.getElementById('result');
+    const trashTypeSpan = document.getElementById('trash-type');
+    const confirmButton = document.getElementById('confirm');
+    const changeButton = document.getElementById('change');
+    const submitForm = document.getElementById('submit-form');
+    const imageDataInput = document.getElementById('image-data');
+    const trashTypeInput = document.getElementById('trash-type-input');
+    const manualTrashTypeInput = document.getElementById('manual-trash-type');
+
+    // MQTT configuration
+    const MQTT_BROKER = "broker.emqx.io";
+    const MQTT_PORT = 8084;  // Use WebSocket port
+    const MQTT_TOPIC = "trash/weight";
+
+    // Enable/disable weight confirmation (for development purposes)
+    const ENABLE_WEIGHT_CONFIRMATION = true;
+
+    // MQTT client setup
+    const client = new Paho.MQTT.Client(MQTT_BROKER, MQTT_PORT, "webclient-" + Math.random().toString(16).substr(2, 8));
+    client.onMessageArrived = onMessageArrived;
+
+    client.connect({
+    onSuccess: onConnect,
+    onFailure: onConnectionLost,
+    useSSL: true
+});
+
+function onConnectionLost(responseObject) {
+    if (responseObject.errorCode !== 0) {
+        console.log("MQTT connection lost: " + responseObject.errorMessage);
+        // Implement a reconnection strategy or fallback mechanism here
+    }
+}
+    function onConnect() {
+        console.log("Connected to MQTT broker");
+        client.subscribe(MQTT_TOPIC);
+    }
+
+    const weightValues = [];
+    const maxWeightValues = 5;
+
+    function onMessageArrived(message) {
+        const weight = parseFloat(message.payloadString);
+        weightValues.push(weight);
+        if (weightValues.length > maxWeightValues) {
+            weightValues.shift();
+        }
+        updateWeight();
+    }
+
+    function updateWeight() {
+        if (weightValues.length === 0) return;
+
+        const sortedWeights = [...weightValues].sort((a, b) => a - b);
+        const filteredWeights = sortedWeights.slice(1, -1);  // Remove potential outliers
+        const avgWeight = filteredWeights.reduce((a, b) => a + b, 0) / filteredWeights.length;
+
+        document.getElementById('weight').textContent = avgWeight.toFixed(2);
+        document.getElementById('weight-input').value = avgWeight.toFixed(2);
+    }
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+            video.srcObject = stream;
+        })
+        .catch(err => {
+            console.error("Error accessing camera:", err);
+        });
+
+    captureButton.addEventListener('click', () => {
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = canvas.toDataURL('image/jpeg');
+        imageDataInput.value = imageData;
+
+        // Perform trash detection using Roboflow
+        roboflow.auth({
+            publishable_key: "nXHlQP10OlbsjZEzF2Re"
+        }).load({
+            model: "trash-detection-otdmj",
+            version: 35
+        }).then(model => {
+            model.detect(canvas).then(predictions => {
+                if (predictions.length > 0) {
+                    const detectedTrashType = predictions[0].class;
+                    trashTypeSpan.textContent = detectedTrashType;
+                    trashTypeInput.value = detectedTrashType;
+                    resultDiv.classList.remove('hidden');
+
+                    if (ENABLE_WEIGHT_CONFIRMATION) {
+                        const weight = document.getElementById('weight').textContent;
+                        const confirmWeight = confirm(`Detected weight: ${weight} Kg. Is this correct?`);
+                        if (!confirmWeight) {
+                            const manualWeight = prompt("Enter the correct weight in Kg:");
+                            if (manualWeight !== null) {
+                                document.getElementById('weight-input').value = parseFloat(manualWeight).toFixed(2);
+                            }
+                        }
+                    }
+                } else {
+                    alert("No trash detected. Please try again.");
+                }
+            });
+        });
+    });
+
+    confirmButton.addEventListener('click', () => {
+        submitForm.submit();
+    });
+
+    changeButton.addEventListener('click', () => {
+        submitForm.classList.remove('hidden');
+        manualTrashTypeInput.value = trashTypeInput.value;
+    });
+</script>
+
+{% endblock %}
