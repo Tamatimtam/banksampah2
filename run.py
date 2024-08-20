@@ -1,6 +1,10 @@
 from app import create_app, db
+from app.routes import start_mqtt_thread
 from app.models import User
+import threading
+from app import create_app, socketio
 
+# Create the Flask app
 app = create_app()
 
 @app.cli.command("init-db")
@@ -19,4 +23,7 @@ def init_db():
     print("Initialized the database and created default admin user.")
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    start_mqtt_thread()
+    
+    # Run the Flask app
+    socketio.run(app, host='0.0.0.0', port=5000)

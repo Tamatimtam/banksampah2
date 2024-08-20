@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT Updates</title>
+    <script>
+        function fetchLatestMessage() {
+            fetch('/latest')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('message').innerText = data.message;
+                });
+        }
+
+        function saveAverage() {
+            fetch('/save_average', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('average').innerText = "Average saved: " + data.average;
+                    } else {
+                        document.getElementById('average').innerText = "Error: " + data.message;
+                    }
+                });
+        }
+
+        setInterval(fetchLatestMessage, 1000); // Fetch latest message every second
+    </script>
+</head>
+<body>
+    <h1>Latest MQTT Message</h1>
+    <p id="message">Waiting for messages...</p>
+
+    <button onclick="saveAverage()">Save Average of Last 5 Messages</button>
+    <p id="average"></p>
+</body>
+</html>

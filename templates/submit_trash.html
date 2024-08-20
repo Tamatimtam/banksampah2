@@ -30,8 +30,9 @@
     </form>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
 <script src="https://cdn.roboflow.com/0.2.26/roboflow.js"></script>
+
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -44,58 +45,22 @@
     const imageDataInput = document.getElementById('image-data');
     const trashTypeInput = document.getElementById('trash-type-input');
     const manualTrashTypeInput = document.getElementById('manual-trash-type');
+    const weightSpan = document.getElementById('weight');
+    const weightInput = document.getElementById('weight-input');
 
-    // MQTT configuration
-    const MQTT_BROKER = "broker.emqx.io";
-    const MQTT_PORT = 8084;  // Use WebSocket port
-    const MQTT_TOPIC = "trash/weight";
+    // Connect to WebSocket
+    const socket = io();
 
-    // Enable/disable weight confirmation (for development purposes)
-    const ENABLE_WEIGHT_CONFIRMATION = true;
 
-    // MQTT client setup
-    const client = new Paho.MQTT.Client(MQTT_BROKER, MQTT_PORT, "webclient-" + Math.random().toString(16).substr(2, 8));
-    client.onMessageArrived = onMessageArrived;
-
-    client.connect({
-    onSuccess: onConnect,
-    onFailure: onConnectionLost,
-    useSSL: true
-});
-
-function onConnectionLost(responseObject) {
-    if (responseObject.errorCode !== 0) {
-        console.log("MQTT connection lost: " + responseObject.errorMessage);
-        // Implement a reconnection strategy or fallback mechanism here
-    }
-}
-    function onConnect() {
-        console.log("Connected to MQTT broker");
-        client.subscribe(MQTT_TOPIC);
-    }
-
-    const weightValues = [];
-    const maxWeightValues = 5;
-
-    function onMessageArrived(message) {
-        const weight = parseFloat(message.payloadString);
-        weightValues.push(weight);
-        if (weightValues.length > maxWeightValues) {
-            weightValues.shift();
+    // Listen for weight updates
+    function fetchLatestMessage() {
+            fetch('/latest')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('weight').innerText = data.message;
+                });
         }
-        updateWeight();
-    }
 
-    function updateWeight() {
-        if (weightValues.length === 0) return;
-
-        const sortedWeights = [...weightValues].sort((a, b) => a - b);
-        const filteredWeights = sortedWeights.slice(1, -1);  // Remove potential outliers
-        const avgWeight = filteredWeights.reduce((a, b) => a + b, 0) / filteredWeights.length;
-
-        document.getElementById('weight').textContent = avgWeight.toFixed(2);
-        document.getElementById('weight-input').value = avgWeight.toFixed(2);
-    }
 
     navigator.mediaDevices.getUserMedia({ video: true })
         .then(stream => {
@@ -112,7 +77,7 @@ function onConnectionLost(responseObject) {
 
         // Perform trash detection using Roboflow
         roboflow.auth({
-            publishable_key: "nXHlQP10OlbsjZEzF2Re"
+            publishable_key: "rf_NX9HeL4KjwZB9TlDktyGMQwh4HO2"
         }).load({
             model: "trash-detection-otdmj",
             version: 35
@@ -124,14 +89,12 @@ function onConnectionLost(responseObject) {
                     trashTypeInput.value = detectedTrashType;
                     resultDiv.classList.remove('hidden');
 
-                    if (ENABLE_WEIGHT_CONFIRMATION) {
-                        const weight = document.getElementById('weight').textContent;
-                        const confirmWeight = confirm(`Detected weight: ${weight} Kg. Is this correct?`);
-                        if (!confirmWeight) {
-                            const manualWeight = prompt("Enter the correct weight in Kg:");
-                            if (manualWeight !== null) {
-                                document.getElementById('weight-input').value = parseFloat(manualWeight).toFixed(2);
-                            }
+                    const weight = weightSpan.textContent;
+                    const confirmWeight = confirm(`Detected weight: ${weight} Kg. Is this correct?`);
+                    if (!confirmWeight) {
+                        const manualWeight = prompt("Enter the correct weight in Kg:");
+                        if (manualWeight !== null) {
+                            weightInput.value = parseFloat(manualWeight).toFixed(2);
                         }
                     }
                 } else {
@@ -149,6 +112,10 @@ function onConnectionLost(responseObject) {
         submitForm.classList.remove('hidden');
         manualTrashTypeInput.value = trashTypeInput.value;
     });
+
+
+    setInterval(fetchLatestMessage, 1000); // Fetch latest message every second
+
 </script>
 
 {% endblock %}
